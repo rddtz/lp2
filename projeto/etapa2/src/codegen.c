@@ -139,18 +139,19 @@ void codegen_program(codegen_ctx_t *ctx, ast_node_t *program)
             sym_entry_t *entry = symtab_lookup(ctx->symtab, decl->value);
             entry->scope = SYM_SCOPE_GLOBAL;
             entry->offset = global_offset;
-            
+            int entry_size;
+
             if(decl->type == AST_VAR_DECL){
-                global_offset += type_size(entry->datatype);
+                entry_size = type_size(entry->datatype);
             }
             else{
-                global_offset += type_size(entry->datatype) * entry->array_size;
+                entry_size = type_size(entry->datatype) * entry->array_size;
             }
 
-            char offset_str[16];
-            snprintf(offset_str, sizeof(offset_str), "%d", entry->offset);
-
-            codegen_emit(ctx, TAC_DECL_GLOBAL, decl->value, offset_str, NULL);
+           char size_str[16]; 
+            global_offset += entry_size;
+            snprintf(size_str, sizeof(size_str), "%d", entry_size);
+            codegen_emit(ctx, TAC_DECL_GLOBAL, decl->value, size_str, NULL);
         }
         decl = decl->next;
     }
@@ -253,15 +254,25 @@ void codegen_stmt(codegen_ctx_t *ctx, ast_node_t *stmt)
          * com TAC_STORE — mas isso é bônus; foque primeiro no caso simples.
          */
         case AST_ASSIGN: {
+
+
+
+            if(stmt->children[0]->type == AST_EXPR_INDEX){
+                char *lname = stmt->children[0]->value;
+                char *rval  = codegen_expr(ctx, stmt->children[1]); 
+                char *lval  = codegen_expr(ctx, stmt->children[0]->children[0]);
+                codegen_emit(ctx, TAC_STORE, lname, lval, rval);
+                free(rval); free(lval);
+            }
+            else{
+
             if (strcmp(stmt->value, ":=") == 0) {
                 /* TODO-E2-D: implemente aqui */
                 //fprintf(stderr, "[CODEGEN] TODO-E2-D: atribuição não implementada ainda.\n");
                 char *lname = stmt->children[0]->value;
                 char *rval  = codegen_expr(ctx, stmt->children[1]);
-                char *tmp   = tac_new_temp();
-                codegen_emit(ctx, TAC_COPY, tmp, rval, NULL);
-                codegen_emit(ctx, TAC_COPY, lname, tmp, NULL);
-                free(rval); free(tmp);
+                codegen_emit(ctx, TAC_COPY, lname, rval, NULL);
+                free(rval); 
             } else if (strcmp(stmt->value, "+=") == 0) {
                 /* compound assignment += */
                 char *lname = stmt->children[0]->value;
@@ -278,6 +289,8 @@ void codegen_stmt(codegen_ctx_t *ctx, ast_node_t *stmt)
                 codegen_emit(ctx, TAC_COPY, lname, tmp, NULL);
                 free(rval); free(tmp);
             }
+
+            }    
             break;
         }
 
