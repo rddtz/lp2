@@ -142,25 +142,33 @@ void codegen_fun(codegen_ctx_t *ctx, ast_node_t *fun_decl)
     ctx->local_offset = 0;
     codegen_emit(ctx, TAC_BEGINFUNC, fname, NULL, NULL);
 
+    /* Emit params as TAC_DECL_LOCAL with sequential 8-byte slots.
+     * e->offset is set negative so asmgen_function identifies them as params
+     * and spills the corresponding arg registers into the frame. */
     ast_node_t *param = fun_decl->children[1];
-    int param_offset = -4;
+    int param_slot = 0;
     while (param) {
         if (param->type == AST_PARAM && param->value) {
             sym_entry_t *e = symtab_lookup(ctx->symtab, param->value);
             if (e) {
                 e->scope  = SYM_SCOPE_LOCAL;
-                e->offset = param_offset;
-                param_offset -= type_size(e->datatype);
+                e->offset = -(param_slot * 8 + 8);
+                char offset_str[16];
+                snprintf(offset_str, sizeof(offset_str), "%d", param_slot * 8);
+                codegen_emit(ctx, TAC_DECL_LOCAL, param->value, offset_str, NULL);
+                param_slot++;
             }
         }
         param = param->next;
     }
+    ctx->local_offset = param_slot * 8;
 
     ast_node_t *body = fun_decl->children[2];
     if (body && body->type == AST_BLOCK) {
         ast_node_t *stmt = body->children[0];
         while (stmt) { codegen_stmt(ctx, stmt); stmt = stmt->next; }
     }
+    codegen_emit(ctx, TAC_RETURN_VOID, NULL, NULL, NULL);
     codegen_emit(ctx, TAC_ENDFUNC, fname, NULL, NULL);
 }
 
@@ -231,7 +239,7 @@ void codegen_stmt(codegen_ctx_t *ctx, ast_node_t *stmt)
             if (e) {
                 e->scope  = SYM_SCOPE_LOCAL;
                 e->offset = ctx->local_offset;
-                ctx->local_offset += type_size(e->datatype);
+                ctx->local_offset += 8;
                 char offset_str[16];
                 snprintf(offset_str, sizeof(offset_str), "%d", e->offset);
                 codegen_emit(ctx, TAC_DECL_LOCAL, vname, offset_str, NULL);
