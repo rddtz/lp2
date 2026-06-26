@@ -176,43 +176,28 @@ bool_result_t codegen_bool_expr(codegen_ctx_t *ctx, ast_node_t *expr)
         (strcmp(expr->value, "&&") == 0 || strcmp(expr->value, "||") == 0))
     {
         if (strcmp(expr->value, "&&") == 0) {
-            /*
-             * TODO-E3-A (&&): implemente a geração de código para &&.
-             *
-             * Algoritmo:
-             *   1. r1 = codegen_bool_expr(ctx, expr->children[0])
-             *   2. Gere rótulo lmid; preencha r1.true_list com lmid
-             *   3. Emita TAC_LABEL lmid
-             *   4. r2 = codegen_bool_expr(ctx, expr->children[1])
-             *   5. res.true_list  = r2.true_list
-             *      res.false_list = patch_list_merge(r1.false_list, r2.false_list)
-             *
-             * Semântica: e1 && e2 é falso se e1 é falso (curto-circuito).
-             *            Se e1 é verdadeiro, avalia e2.
-             */
-            fprintf(stderr, "[CODEGEN] TODO-E3-A: '&&' não implementado.\n");
-            /* stub: gera código das subexpressões mas não conecta as listas */
+
             bool_result_t r1 = codegen_bool_expr(ctx, expr->children[0]);
+
+	    char *lmid = tac_new_label();
+	    patch_list_backpatch(r1.true_list, lmid);
+	    codegen_emit(ctx, TAC_LABEL, lmid, NULL, NULL);
+	    free(lmid);
+
             bool_result_t r2 = codegen_bool_expr(ctx, expr->children[1]);
+
             res.true_list  = r2.true_list;
             res.false_list = patch_list_merge(r1.false_list, r2.false_list);
             patch_list_free(r1.true_list);
         } else {
-            /*
-             * TODO-E3-A (||): implemente a geração de código para ||.
-             *
-             * Algoritmo:
-             *   1. r1 = codegen_bool_expr(ctx, expr->children[0])
-             *   2. Gere rótulo lmid; preencha r1.false_list com lmid
-             *   3. Emita TAC_LABEL lmid
-             *   4. r2 = codegen_bool_expr(ctx, expr->children[1])
-             *   5. res.true_list  = patch_list_merge(r1.true_list, r2.true_list)
-             *      res.false_list = r2.false_list
-             *
-             * Semântica: e1 || e2 é verdadeiro se e1 é verdadeiro (curto-circuito).
-             */
-            fprintf(stderr, "[CODEGEN] TODO-E3-A: '||' não implementado.\n");
+
             bool_result_t r1 = codegen_bool_expr(ctx, expr->children[0]);
+
+	    char *lmid = tac_new_label();
+	    patch_list_backpatch(r1.false_list, lmid);
+	    codegen_emit(ctx, TAC_LABEL, lmid, NULL, NULL);
+	    free(lmid);
+
             bool_result_t r2 = codegen_bool_expr(ctx, expr->children[1]);
             res.true_list  = patch_list_merge(r1.true_list, r2.true_list);
             res.false_list = r2.false_list;
@@ -346,9 +331,40 @@ void codegen_stmt(codegen_ctx_t *ctx, ast_node_t *stmt)
          *   Senão:
          *     Preenche cond.false_list com lfalse → emite lfalse
          * --------------------------------------------------------------- */
-        case AST_IF:
-            fprintf(stderr, "[CODEGEN] TODO-E3-B: if não implementado.\n");
+        case AST_IF: {
+            bool_result_t cond = codegen_bool_expr(ctx, stmt->children[0]);
+
+            char *ltrue = tac_new_label();
+            patch_list_backpatch(cond.true_list, ltrue);
+            codegen_emit(ctx, TAC_LABEL, ltrue, NULL, NULL);
+            free(ltrue);
+
+            codegen_stmt(ctx, stmt->children[1]);
+
+            if (stmt->children[2]) {
+                char *lend = tac_new_label();
+                codegen_emit(ctx, TAC_JUMP, lend, NULL, NULL);
+
+                char *lfalse = tac_new_label();
+                patch_list_backpatch(cond.false_list, lfalse);
+                codegen_emit(ctx, TAC_LABEL, lfalse, NULL, NULL);
+                free(lfalse);
+
+                codegen_stmt(ctx, stmt->children[2]);
+
+                codegen_emit(ctx, TAC_LABEL, lend, NULL, NULL);
+                free(lend);
+            } else {
+                char *lfalse = tac_new_label();
+                patch_list_backpatch(cond.false_list, lfalse);
+                codegen_emit(ctx, TAC_LABEL, lfalse, NULL, NULL);
+                free(lfalse);
+            }
+
+            patch_list_free(cond.true_list);
+            patch_list_free(cond.false_list);
             break;
+        }
 
         /* ---------------------------------------------------------------
          * TODO-E3-C: while
@@ -361,9 +377,31 @@ void codegen_stmt(codegen_ctx_t *ctx, ast_node_t *stmt)
          *   Emite goto lbegin
          *   Preenche cond.false_list → emite lend
          * --------------------------------------------------------------- */
-        case AST_WHILE:
-            fprintf(stderr, "[CODEGEN] TODO-E3-C: while não implementado.\n");
+        case AST_WHILE: {
+            char *lbegin = tac_new_label();
+            codegen_emit(ctx, TAC_LABEL, lbegin, NULL, NULL);
+
+            bool_result_t cond = codegen_bool_expr(ctx, stmt->children[0]);
+
+            char *lbody = tac_new_label();
+            patch_list_backpatch(cond.true_list, lbody);
+            codegen_emit(ctx, TAC_LABEL, lbody, NULL, NULL);
+            free(lbody);
+
+            codegen_stmt(ctx, stmt->children[1]);
+
+            codegen_emit(ctx, TAC_JUMP, lbegin, NULL, NULL);
+            free(lbegin);
+
+            char *lend = tac_new_label();
+            patch_list_backpatch(cond.false_list, lend);
+            codegen_emit(ctx, TAC_LABEL, lend, NULL, NULL);
+            free(lend);
+
+            patch_list_free(cond.true_list);
+            patch_list_free(cond.false_list);
             break;
+        }
 
         /* ---------------------------------------------------------------
          * TODO-E3-D: for
@@ -381,9 +419,34 @@ void codegen_stmt(codegen_ctx_t *ctx, ast_node_t *stmt)
          *   Emite goto lbegin
          *   Preenche cond.false_list → emite lend
          * --------------------------------------------------------------- */
-        case AST_FOR:
-            fprintf(stderr, "[CODEGEN] TODO-E3-D: for não implementado.\n");
+        case AST_FOR: {
+            codegen_stmt(ctx, stmt->children[0]);
+
+            char *lbegin = tac_new_label();
+            codegen_emit(ctx, TAC_LABEL, lbegin, NULL, NULL);
+
+            bool_result_t cond = codegen_bool_expr(ctx, stmt->children[1]);
+
+            char *lbody = tac_new_label();
+            patch_list_backpatch(cond.true_list, lbody);
+            codegen_emit(ctx, TAC_LABEL, lbody, NULL, NULL);
+            free(lbody);
+
+            codegen_stmt(ctx, stmt->children[3]);
+            codegen_stmt(ctx, stmt->children[2]);
+
+            codegen_emit(ctx, TAC_JUMP, lbegin, NULL, NULL);
+            free(lbegin);
+
+            char *lend = tac_new_label();
+            patch_list_backpatch(cond.false_list, lend);
+            codegen_emit(ctx, TAC_LABEL, lend, NULL, NULL);
+            free(lend);
+
+            patch_list_free(cond.true_list);
+            patch_list_free(cond.false_list);
             break;
+        }
 
         default:
             fprintf(stderr, "[CODEGEN] Comando desconhecido tipo=%d\n", stmt->type);

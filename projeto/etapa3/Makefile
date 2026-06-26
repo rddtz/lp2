@@ -2,7 +2,7 @@
 TARGET  = compilador
 SRCDIR  = src
 CC      = gcc
-CFLAGS  = -Wall -Wextra -g -std=c11 -I$(SRCDIR)
+CFLAGS  = -Wall -Wextra -g -std=c11 -D_POSIX_C_SOURCE=200809L -I$(SRCDIR)
 FLEX    = flex
 BISON   = bison
 
